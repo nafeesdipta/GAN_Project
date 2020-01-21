@@ -44,7 +44,7 @@ def custom_loss_gan2(g1, g2):
     return (tf.minimum(g1,g2))
 
 # define the standalone discriminator model
-def define_discriminator(n_inputs=1000):
+def define_discriminator(n_inputs=100):
     model = Sequential()
     #model.add(Flatten())
     model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
@@ -125,7 +125,7 @@ def generate_real(generator, x):
     
     values = generator.predict(values)
     values = values.reshape(-1,1)
-    nn = NearestNeighbors(size, metric=dis, algorithm='brute').fit(values)
+    nn = NearestNeighbors(batch_size, metric=dis, algorithm='brute').fit(values)
     dists, idxs = nn.kneighbors(values)
     pdis = pdist(values, dis)
     #r_nn.append(pdis)
@@ -163,7 +163,7 @@ def generate_fake(generator2, x):
     generator2.fit(values, y, epochs=100)
     values = generator2.predict(values)
     values = values.reshape(-1,1)
-    nn = NearestNeighbors(size, metric=dis, algorithm='brute').fit(values)
+    nn = NearestNeighbors(batch_size, metric=dis, algorithm='brute').fit(values)
     dists, idxs = nn.kneighbors(values)
     pdis = pdist(values, dis)
     #f_nn.append(pdis)
@@ -208,24 +208,25 @@ def summarize_performance(epoch, generator, generator2, discriminator, n):
     pyplot.show()
 
 # train the generator and discriminator
-def train(g_model, g_model2, d_model, gan_model, size, n_epochs=15, n_eval=2):
+def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, n_eval=2):
     # determine half the size of one batch, for updating the discriminator
-    half_batch = size
+    #batch_size = 100
+    batch_per_epoch = int(size/batch_size)
     
     # manually enumerate epochs
     #g1_tmp, g2_tmp = list(), list()
     for i in range(n_epochs):
         # prepare real samples
-        
-        x_real, y_real = generate_real(g_model, half_batch)
+        for j in range(batch_per_epoch):
+            x_real, y_real = generate_real(g_model, batch_size)
 
-        x_fake, y_fake = generate_fake(g_model2, half_batch)
-        # update discriminator
+            x_fake, y_fake = generate_fake(g_model2, batch_size)
+         # update discriminator
         
-        x_real= x_real.reshape(1, size,1)
-        y_real = y_real.reshape(1, size, 1)
-        x_fake = x_fake.reshape(1, size, 1)
-        y_fake = y_fake.reshape(1, size, 1)
+            x_real= x_real.reshape(1, batch_size,1)
+            y_real = y_real.reshape(1, batch_size, 1)
+            x_fake = x_fake.reshape(1, batch_size, 1)
+            y_fake = y_fake.reshape(1, batch_size, 1)
         #d_model.train_on_batch(x_real, y_real)
         #d_model.train_on_batch(x_fake, y_fake)
         # prepare points in latent space as input for the generator
@@ -235,44 +236,44 @@ def train(g_model, g_model2, d_model, gan_model, size, n_epochs=15, n_eval=2):
        # xx_gan = generate_latent_points(latent_dim, n_batch)
        # yy_gan = ones((n_batch, 0))
         # update the generator via the discriminator's error
-        x_real = x_real.reshape(-1,1)
-        nn = NearestNeighbors(size, metric=dis, algorithm='brute').fit(x_real)
-        dists, idxs = nn.kneighbors(x_real)
-        pdis_r = pdist(x_real, dis)
-        #plt.scatter(dists, dists, marker='*')
-        x_fake = x_fake.reshape(-1,1)
-        nn = NearestNeighbors(size, metric=dis, algorithm='brute').fit(x_fake)
-        dists, idxs = nn.kneighbors(x_fake)
-        #plt.scatter(dists, dists, marker='|')
-        pdis_f = pdist(x_fake, dis)
-        plt.scatter(x_real, x_real, marker = '^')
-        plt.scatter(x_fake, x_fake, marker = 'o')
-        plt.scatter(pdis_f, pdis_f, marker='|')
-        plt.scatter(pdis_r, pdis_r, marker='*')
-        #plt.show()
-        plt.close()
-        f_nn.append(mean(pdis_f))
-        r_nn.append(mean(pdis_r))
-        x_real= x_real.reshape(1, size,1)
-        y_real = y_real.reshape(1, size, 1)
-        x_fake = x_fake.reshape(1, size, 1)
-        y_fake = y_fake.reshape(1, size, 1)
+            x_real = x_real.reshape(-1,1)
+            nn = NearestNeighbors(batch_size, metric=dis, algorithm='brute').fit(x_real)
+            dists, idxs = nn.kneighbors(x_real)
+            pdis_r = pdist(x_real, dis)
+            #plt.scatter(dists, dists, marker='*')
+            x_fake = x_fake.reshape(-1,1)
+            nn = NearestNeighbors(batch_size, metric=dis, algorithm='brute').fit(x_fake)
+            dists, idxs = nn.kneighbors(x_fake)
+            #plt.scatter(dists, dists, marker='|')
+            pdis_f = pdist(x_fake, dis)
+            plt.scatter(x_real, x_real, marker = '^')
+            plt.scatter(x_fake, x_fake, marker = 'o')
+            plt.scatter(pdis_f, pdis_f, marker='|')
+            plt.scatter(pdis_r, pdis_r, marker='*')
+            #plt.show()
+            plt.close()
+            f_nn.append(mean(pdis_f))
+            r_nn.append(mean(pdis_r))
+            x_real= x_real.reshape(1, batch_size,1)
+            y_real = y_real.reshape(1, batch_size, 1)
+            x_fake = x_fake.reshape(1, batch_size, 1)
+            y_fake = y_fake.reshape(1, batch_size, 1)
         
-        y1_pred = g_model.predict(x_real)
-        y2_pred = g_model2.predict(x_fake)
-        g1_loss = g_model.train_on_batch(x_real, y1_pred)
-        g2_loss = g_model2.train_on_batch(x_fake, y2_pred)
-        #dis_loss = g1_loss[0] - g2_loss[0]
+            y1_pred = g_model.predict(x_real)
+            y2_pred = g_model2.predict(x_fake)
+            g1_loss = g_model.train_on_batch(x_real, y1_pred)
+            g2_loss = g_model2.train_on_batch(x_fake, y2_pred)
+            #dis_loss = g1_loss[0] - g2_loss[0]
 
-        #g1_loss = g_model.train_on_batch(x_real, y_real)
-        #g2_loss = g_model2.train_on_batch(x_fake, y_fake)
-        dis_loss = d_model.train_on_batch(x_real, y_real)
-        dis_loss = d_model.train_on_batch(x_fake, y_fake)
-        #dis_loss = g1_loss[0] - g2_loss[0]
-        c1_hist.append(dis_loss[0])
-        g1_hist.append(g1_loss)
-        g2_hist.append(g2_loss)
-        final_plot(r_nn, f_nn, c1_hist)
+            #g1_loss = g_model.train_on_batch(x_real, y_real)
+            #g2_loss = g_model2.train_on_batch(x_fake, y_fake)
+            dis_loss = d_model.train_on_batch(x_real, y_real)
+            dis_loss = d_model.train_on_batch(x_fake, y_fake)
+            #dis_loss = g1_loss[0] - g2_loss[0]
+            c1_hist.append(dis_loss[0])
+            g1_hist.append(g1_loss)
+            g2_hist.append(g2_loss)
+            final_plot(r_nn, f_nn, c1_hist)
         #print("g1: ", g1_loss, "g2: ", g2_loss, "d:", dis_loss)
         # evaluate the model every n_eval epochs
         
@@ -301,6 +302,7 @@ def final_plot(r_nn, f_nn, c1_hist):
 
 
 size = 1000
+batch_size = int(size/10)
 dis = 'euclidean'
 g1_loss = 0
 g2_loss = 0
@@ -312,9 +314,9 @@ r_nn, f_nn = [], []
 # create the discriminator
 discriminator = define_discriminator()
 # create the generator
-generator = define_generator(size)
+generator = define_generator(batch_size)
 
-generator2 = define_generator2(size)
+generator2 = define_generator2(batch_size)
 # create the gan
 
 gan_model = define_gan(generator, generator2, discriminator)
@@ -324,7 +326,7 @@ gan_model.summary()
 # plot gan model
 #plot_model(gan_model, to_file='gan_plot.png', show_shapes=True, show_layer_names=True)
 
-train(generator, generator2, discriminator, gan_model, size)
+train(generator, generator2, discriminator, gan_model, batch_size, size)
 print(c1_hist.count)
 print(len(c1_hist))
 
