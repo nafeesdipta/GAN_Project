@@ -51,7 +51,7 @@ def define_discriminator(n_inputs=100):
     #model.add(Flatten())
     model.add(Dense(1, activation='sigmoid'))
     # compile model
-    model.compile(loss=custom_loss, optimizer='adam', metrics=['accuracy'])
+    model.compile(loss=wasserstein_loss, optimizer='adam', metrics=['accuracy'])
     return model
 
 
@@ -93,7 +93,7 @@ def define_gan(generator, generator2, discriminator):
     model.add(discriminator)
     # compile model
     #model.add(Flatten())
-    model.compile(loss=custom_loss, optimizer='adam', metrics=['accuracy'])
+    #model.compile(loss=custom_loss, optimizer='adam', metrics=['accuracy'])
     
     #model.summary()
     return model
@@ -139,7 +139,7 @@ def generate_real(generator, x):
 def generate_fake(generator2, x):
     # generate random Gaussian values
     # seed random number generator
-    seed(5)
+    seed(15)
     x = int (x)
     # generate some Gaussian values
     values = randn(x) + 1
@@ -215,6 +215,7 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
     
     # manually enumerate epochs
     #g1_tmp, g2_tmp = list(), list()
+    
     for i in range(n_epochs):
         # prepare real samples
         for j in range(batch_per_epoch):
@@ -258,18 +259,18 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             y_real = y_real.reshape(1, batch_size, 1)
             x_fake = x_fake.reshape(1, batch_size, 1)
             y_fake = y_fake.reshape(1, batch_size, 1)
-        
+            global g1_loss, g2_loss, dis_loss
             y1_pred = g_model.predict(x_real)
             y2_pred = g_model2.predict(x_fake)
             g1_loss = g_model.train_on_batch(x_real, y1_pred)
             g2_loss = g_model2.train_on_batch(x_fake, y2_pred)
             #dis_loss = g1_loss[0] - g2_loss[0]
-
+            
             #g1_loss = g_model.train_on_batch(x_real, y_real)
             #g2_loss = g_model2.train_on_batch(x_fake, y_fake)
             dis_loss = d_model.train_on_batch(x_real, y_real)
             dis_loss = d_model.train_on_batch(x_fake, y_fake)
-            #dis_loss = g1_loss[0] - g2_loss[0]
+            dis_loss[0] = g1_loss[0] - g2_loss[0]
             c1_hist.append(dis_loss[0])
             g1_hist.append(g1_loss)
             g2_hist.append(g2_loss)
@@ -329,4 +330,3 @@ gan_model.summary()
 train(generator, generator2, discriminator, gan_model, batch_size, size)
 print(c1_hist.count)
 print(len(c1_hist))
-
