@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from numpy.random import seed
 from numpy.random import randn
 from keras.models import Sequential
-from keras.layers import Dense, Flatten
+from keras.layers import Dense, Flatten, BatchNormalization
 from matplotlib import pyplot
 import keras.backend as K
 from keras.utils.vis_utils import plot_model
@@ -27,30 +27,35 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 def wasserstein_loss(y_true, y_pred):
 	return K.mean(y_true * y_pred)
 
-
-    
-
 def custom_loss(g1_loss,g2_loss):
     def loss(y_true, y_pred):
         #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
-        g1 = tf.cast(g1_loss, "float32")
-        g2 = tf.cast(g2_loss, "float32")
-        
-        return (g1-g2) + K.sqrt(K.binary_crossentropy(y_true, y_pred))*0
+        global g1_loss, g2_loss
+        g1_loss = tf.cast(g1_loss, "float32")
+        g2_loss = tf.cast(g2_loss, "float32")
+        f = (g1_loss-g2_loss) + (y_true-y_pred)*0
+        return f 
     return loss
 
-def g1l(score):
+def g1l():
+    print ('Loss Score:', score)
     def loss(y_true, y_pred):
         #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
-        g1 = tf.cast(score, "float32")
-        return K.mean((g1)) + K.sqrt(K.binary_crossentropy(y_true, y_pred))*0
+        global g1_loss, score
+        score = tf.cast(score, "float32")
+        g1_loss = K.mean(y_true-y_pred)
+        #return g1_loss
+        return score + K.mean(y_true-y_pred)*0
     return loss
 
-def g2l(score):
+def g2l():
     def loss(y_true, y_pred):
         #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
-        g2 = tf.cast(score, "float32")
-        return K.mean((g2))*-1 + K.sqrt(K.binary_crossentropy(y_true, y_pred))*0
+        global g2_loss, score
+        score = tf.cast(score, "float32")
+        g2_loss = K.mean(y_true-y_pred)*-1
+        #return g2_loss
+        return score*-1 + K.mean(y_true-y_pred)*0
     return loss
 
 def custom_loss_gan1(y_true,y1_pred):
@@ -64,47 +69,50 @@ def custom_loss_gan2(y_true, y2_pred):
 
 # define the standalone discriminator model
 def define_discriminator(n_inputs):
+    global g1_loss, g2_loss
     model = Sequential()
     #model.add(Flatten())
-    model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
+    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
     #model.add(Dense(35, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
-    #model.add(Flatten())
+    model.add(LeakyReLU(alpha=0.01))
     model.add(Dense(1, activation='linear'))
     # compile model
     opt = RMSprop(lr=0.00005)
-    model.compile(loss=custom_loss(g1_loss,g2_loss), optimizer=opt, metrics=['accuracy'])
+    model.compile(loss=custom_loss(g1_loss, g2_loss), optimizer=opt, metrics=['accuracy'])
     return model
 
 
 # define the standalone generator model
 def define_generator(latent_dim, n_outputs=1):
+    global score
     model = Sequential()
     #model.add(Flatten())
     #print(latent_dim)
-    model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
+    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
     #model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_dim=latent_dim))
     #model.add(Flatten())
     model.add(Dense(n_outputs, activation='linear'))
-    model.compile(loss=g2l(score), optimizer='sgd', metrics=['accuracy'])
+    model.compile(loss=g2l(), optimizer='sgd', metrics=['accuracy'])
     return model
 
 ##Second generator
 
 def define_generator2(latent_dim, n_outputs=1):
+    global score
     model = Sequential()
     #model.add(Flatten())
     #print(latent_dim)
-    model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
+    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
     #model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_dim=latent_dim))
     #model.add(Flatten())
     model.add(Dense(n_outputs, activation='linear'))
-    model.compile(loss=g2l(score), optimizer='sgd', metrics=['accuracy'])
+    model.compile(loss=g2l(), optimizer='sgd', metrics=['accuracy'])
     return model
 
 # define the combined generator and discriminator model, for updating the generator
 def define_gan(generator, generator2, discriminator):
     # make weights in the discriminator not trainable
-    discriminator.trainable = False
+    #discriminator.trainable = False
     # connect them
     model = Sequential()
     # add generator
@@ -141,7 +149,7 @@ def generate_real(generator, x):
     
     #print("Nearest Point for real", pdis)
     values = values.reshape(1, x, 1)
-    values=generator.predict(values)
+    #values=generator.predict(values)
     y = ones((x, 1))
     y = y.reshape(1, x, 1)
     #generator.fit(values, y, epochs=10)
@@ -214,8 +222,8 @@ def generate_latent_points(latent_dim, n):
 # use the generator to generate n fake examples, with class labels
 def generate_fake_samples(generator2, x):
     x = int (x)
-    values = randn(x) + 0.5
-    y = ones((x,1))
+    values = randn(x)
+    y = zeros((x,1))
     y = y.reshape(1, x, 1)
     values = values.reshape(1, x, 1)
     values = generator2.predict(values)
@@ -226,13 +234,11 @@ def generate_fake_samples(generator2, x):
 def generate_real_samples(generator, x):
 
     x = int (x)
-    values = randn(x) - 0.5
-    y = zeros((x,1))
+    values = randn(x)
+    y = ones((x,1))
     y = y.reshape(1, x, 1)
     values = values.reshape(1, x, 1)
     values = generator.predict(values)
-    
-
     return values, y
 
 '''
@@ -271,18 +277,15 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
     global score, g1_loss, g2_loss, dis_loss, yl, latent_dim
     # manually enumerate epochs
     #g1_tmp, g2_tmp = list(), list()
-    
-    
-
     x_real, y_real = generate_real(g_model, batch_size)
-
     x_fake, y_fake = generate_fake(g_model2, batch_size)
     x_real= x_real.reshape(1, batch_size,1)
     y_real = y_real.reshape(1, batch_size, 1)
     x_fake = x_fake.reshape(1, batch_size, 1)
     y_fake = y_fake.reshape(1, batch_size, 1)
             #print ("before", x_real, " shape", x_real.shape)
-    #dx = np.concatenate([x_real, x_fake], axis=1)
+    dxx = np.concatenate([x_real, x_fake], axis=1)
+    #g_p = d_model.predict(dxx)
             #print ("after", dx, " shape", dx.shape)
     #
             
@@ -324,8 +327,7 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             dists2, idxs2 = nn.kneighbors(x_fake_n)
             id2 = idxs2[:,0]
             n2 = x_fake[id2]
-            
-            
+
             dx = np.concatenate([n1, n2], axis=1)
             dx = dx.reshape(1,batch_size*2, 1)
             dy = np.concatenate([y_real_n, y_fake_n], axis=1)
@@ -335,8 +337,9 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             x_real_n= x_real_n.reshape(1, batch_size,1)
             x_fake_n= x_fake_n.reshape(1, batch_size,1)
             print ("Fitting Discriminator...............................................................................")
-            d_model.fit(dx,dy, epochs=10)
+            d_model.fit(dx,dy, epochs=5)
             score_each = d_model.predict(dx)
+            score_concate =  d_model.predict(dxx)
             plt.scatter(x_real, x_real, marker = '^')
             plt.scatter(x_fake, x_fake, marker = 'o')
             plt.scatter(n1, n1, marker='|')
@@ -350,23 +353,23 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             
             #y1_pred = g_model.predict(x_real)
             #y2_pred = g_model2.predict(x_fake)
-            #dis_loss = score
-            score = d_model.train_on_batch(dx, dy)
-            g1_loss = g_model.train_on_batch(n1, y_real_n)
-            g2_loss = g_model2.train_on_batch(n2, y_fake_n)
+            score = np.mean(score_each)         
+            g1_loss = g_model.train_on_batch(x_real_n, y_real_n)
+            g2_loss = g_model2.train_on_batch(x_fake_n, y_fake_n)
             
-
+            #d_model.train_on_batch(dx,dy)
+            dis_loss = d_model.train_on_batch(dx,dy)
             print ("score", np.mean(score), "g1_loss", g1_loss, "g2_loss", g2_loss)
             #yl.append(score)
             #score = np.mean(yl)
-            dis_loss = score*5
             #d_model.train_on_batch(g1_loss[0], g2_loss[0])
             c1_hist.append(np.mean(dis_loss))
             g1_hist.append(np.mean(g1_loss))
             g2_hist.append(np.mean(g2_loss))
-            pyplot.show()
-            pyplot.close
-            final_plot(n1, n2, score_each, x_real, x_fake)
+            #d_model.compile(optimizer='sgd',loss=custom_loss(g1_loss,g2_loss))
+            #g_model.compile(optimizer='sgd', loss=g1l(score))
+            #g_model2.compile(optimizer='sgd', loss=g2l(score))
+            final_plot(n1, n2, score_each, x_real, x_fake, dxx, score_concate)
             plot_history(c1_hist,g1_hist,g2_hist)
             
            
@@ -385,21 +388,26 @@ def plot_history(d1_hist, g1_hist, g2_hist):
 	pyplot.plot(g1_hist, label='generator_real')
 	pyplot.plot(g2_hist, label='generator_fake')
 	pyplot.legend()
-	#pyplot.savefig('plot_line_plot_loss.png')
-	pyplot.show()
+	pyplot.savefig('/Users/masnoonnafees/Documents/GAN/project/Plot/loss{}.png'.format(count), format="PNG")
+	#pyplot.show()
 
-def final_plot(n1, n2, score_each, xr, xf):
+def final_plot(n1, n2, score_each, xr, xf, dxx, score_concate):
     #pyplot.scatter(r_nn, c1_hist, color='green')
-
+    global count
     #pyplot.scatter(f_nn, c1_hist, color='blue')
     pyplot.scatter(xr, xr*0, color = 'black')
     pyplot.scatter(xf, xf*0, color = 'red')
+    pyplot.scatter(dxx, score_concate, color='orange')
     #pyplot.plot('Nearest Neigbour','discriminator score')
     pyplot.scatter(n1[:,0:250,:], score_each[:,0:250,:], color='green')
     pyplot.scatter(n2[:,0:250,:], score_each[:,250:500,:], color='blue')
+    #pyplot.scatter(score_each[:,0:500,:], score_each[:,0:500,:], color='yellow')
+    
     #pyplot.xlabel("g1 & g2 loss")
     #pyplot.ylabel("Discriminator Score")
-    pyplot.show()
+    pyplot.savefig('/Users/masnoonnafees/Documents/GAN/project/Plot/NN{}.png'.format(count), format="PNG")                     
+    count = count+1
+    #pyplot.show()
     pyplot.close()
 
 
@@ -414,7 +422,8 @@ yl = []
 c1_hist, g1_hist, g2_hist = [], [], []
 r_nn, f_nn = [], []
 latent_dim = 5
-
+count = 1
+count2 = 1
 # create the discriminator
 discriminator = define_discriminator(batch_size*2)
 # create the generator
