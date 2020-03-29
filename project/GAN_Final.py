@@ -7,19 +7,20 @@ from numpy import hstack
 import matplotlib.pyplot as plt
 from numpy.random import seed
 from numpy.random import randn
-from keras.models import Sequential
-from keras.layers import Dense, Flatten, BatchNormalization
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.models import Sequential
+
+from tensorflow.keras.layers import Layer,Dense, Flatten, BatchNormalization, LeakyReLU
 from matplotlib import pyplot
-import keras.backend as K
-from keras.utils.vis_utils import plot_model
+from tensorflow.keras import backend as K
+from tensorflow.keras.optimizers import  RMSprop
 from sklearn.neighbors import KDTree, NearestNeighbors
 from scipy.spatial.distance import pdist
 import os
-import tensorflow as tf
+
 from statistics import mean 
-from keras.layers import LeakyReLU
-from keras.layers import BatchNormalization
-from keras.optimizers import RMSprop
+
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
@@ -27,35 +28,36 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 def wasserstein_loss(y_true, y_pred):
 	return K.mean(y_true * y_pred)
 
-def custom_loss(g1_loss,g2_loss):
+def custom_loss():
+    global g1_loss, g2_loss  
+
     def loss(y_true, y_pred):
-        #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
-        global g1_loss, g2_loss
-        g1_loss = tf.cast(g1_loss, "float32")
-        g2_loss = tf.cast(g2_loss, "float32")
-        f = (g1_loss-g2_loss) + (y_true-y_pred)*0
+        #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)    
+        global g1_loss, g2_loss 
+        g1_loss = np.float32(g1_loss)
+        g2_loss = np.float32(g2_loss)
+        f = (g1_loss-g2_loss) + K.mean(y_true-y_pred)*0
         return f 
     return loss
 
-def g1l():
-    print ('Loss Score:', score)
+def g1l(score):
     def loss(y_true, y_pred):
         #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
         global g1_loss, score
-        score = tf.cast(score, "float32")
-        g1_loss = K.mean(y_true-y_pred)
+        score = np.float32(score)
+        #g1_loss = K.mean(y_true-y_pred)
         #return g1_loss
         return score + K.mean(y_true-y_pred)*0
     return loss
 
-def g2l():
+def g2l(score):
     def loss(y_true, y_pred):
         #return (1-alpha) * loss_cls(y1, x1) + alpha * loss_loc(y2, x2)
         global g2_loss, score
-        score = tf.cast(score, "float32")
-        g2_loss = K.mean(y_true-y_pred)*-1
+        score = np.float32(score)*-1
+        #g2_loss = K.mean(y_true-y_pred)*-1
         #return g2_loss
-        return score*-1 + K.mean(y_true-y_pred)*0
+        return score + K.mean(y_true-y_pred)*0
     return loss
 
 def custom_loss_gan1(y_true,y1_pred):
@@ -72,13 +74,13 @@ def define_discriminator(n_inputs):
     global g1_loss, g2_loss
     model = Sequential()
     #model.add(Flatten())
-    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
+    model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
     #model.add(Dense(35, activation='relu', kernel_initializer='he_uniform', input_shape=(n_inputs, 1)))
     model.add(LeakyReLU(alpha=0.01))
     model.add(Dense(1, activation='linear'))
     # compile model
     opt = RMSprop(lr=0.00005)
-    model.compile(loss=custom_loss(g1_loss, g2_loss), optimizer=opt, metrics=['accuracy'])
+    model.compile(loss=custom_loss(), optimizer='sgd', metrics=['accuracy'])
     return model
 
 
@@ -88,11 +90,11 @@ def define_generator(latent_dim, n_outputs=1):
     model = Sequential()
     #model.add(Flatten())
     #print(latent_dim)
-    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
+    model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
     #model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_dim=latent_dim))
     #model.add(Flatten())
     model.add(Dense(n_outputs, activation='linear'))
-    model.compile(loss=g2l(), optimizer='sgd', metrics=['accuracy'])
+    model.compile(loss=g2l(score), optimizer='sgd', metrics=['accuracy'])
     return model
 
 ##Second generator
@@ -102,31 +104,30 @@ def define_generator2(latent_dim, n_outputs=1):
     model = Sequential()
     #model.add(Flatten())
     #print(latent_dim)
-    model.add(Dense(5, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
+    model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim, 1)))
     #model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_dim=latent_dim))
     #model.add(Flatten())
     model.add(Dense(n_outputs, activation='linear'))
-    model.compile(loss=g2l(), optimizer='sgd', metrics=['accuracy'])
+    model.compile(loss=g2l(score), optimizer='sgd', metrics=['accuracy'])
     return model
 
 # define the combined generator and discriminator model, for updating the generator
 def define_gan(generator, generator2, discriminator):
+    global g1_loss, g2_loss
     # make weights in the discriminator not trainable
     #discriminator.trainable = False
     # connect them
     model = Sequential()
     # add generator
     model.add(generator)
-    #model.compile(loss=custom_loss_gan1, optimizer='adam', metrics=['accuracy'])
     # add the second generator
     model.add(generator2)
-    #model.compile(loss=custom_loss_gan2, optimizer='adam', metrics=['accuracy'])
     model.add(discriminator)
     # compile model
     #model.add(Flatten())
-    #model.compile(loss=custom_loss, optimizer='adam', metrics=['accuracy'])
+    model.compile(loss=custom_loss(), optimizer='sgd', metrics=['accuracy'])
     
-    #model.summary()
+    model.summary()
     return model
 
 
@@ -136,7 +137,7 @@ def generate_real(generator, x):
     #seed(0)
     x = int (x)
     # generate some Gaussian values
-    values = randn(x) - 2.5
+    values = randn(x) - 0.5
     #y = ones((x, 1))
     
     #print (values.shape)
@@ -174,7 +175,7 @@ def generate_fake(generator2, x):
     # seed random number generator
     x = int (x)
     # generate some Gaussian values
-    values = randn(x) + 2.5
+    values = randn(x) + 0.5
     #y = []
     
     
@@ -226,6 +227,7 @@ def generate_fake_samples(generator2, x):
     y = zeros((x,1))
     y = y.reshape(1, x, 1)
     values = values.reshape(1, x, 1)
+    generator2.fit(values,y)
     values = generator2.predict(values)
     
     return values, y
@@ -238,6 +240,7 @@ def generate_real_samples(generator, x):
     y = ones((x,1))
     y = y.reshape(1, x, 1)
     values = values.reshape(1, x, 1)
+    generator.fit(values,y)
     values = generator.predict(values)
     return values, y
 
@@ -285,6 +288,8 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
     y_fake = y_fake.reshape(1, batch_size, 1)
             #print ("before", x_real, " shape", x_real.shape)
     dxx = np.concatenate([x_real, x_fake], axis=1)
+    dyy = np.concatenate([y_real, y_fake], axis=1)
+    d_model.fit(dxx,dyy, epochs=30)
     #g_p = d_model.predict(dxx)
             #print ("after", dx, " shape", dx.shape)
     #
@@ -327,7 +332,7 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             dists2, idxs2 = nn.kneighbors(x_fake_n)
             id2 = idxs2[:,0]
             n2 = x_fake[id2]
-
+            dcn = np.concatenate([x_real_n, x_fake_n], axis=1)
             dx = np.concatenate([n1, n2], axis=1)
             dx = dx.reshape(1,batch_size*2, 1)
             dy = np.concatenate([y_real_n, y_fake_n], axis=1)
@@ -336,8 +341,9 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             n2 = n2.reshape(1, batch_size,1)
             x_real_n= x_real_n.reshape(1, batch_size,1)
             x_fake_n= x_fake_n.reshape(1, batch_size,1)
+            dcn = dcn.reshape(1, batch_size*2,1)
             print ("Fitting Discriminator...............................................................................")
-            d_model.fit(dx,dy, epochs=5)
+            d_model.fit(dx, dy)
             score_each = d_model.predict(dx)
             score_concate =  d_model.predict(dxx)
             plt.scatter(x_real, x_real, marker = '^')
@@ -348,18 +354,26 @@ def train(g_model, g_model2, d_model, gan_model, batch_size, size, n_epochs=15, 
             plt.close()
             f_nn.append(np.mean(n2))
             r_nn.append(np.mean(n1))
-            #score = d_model.train_on_batch(dx,dy)
+            #score = 
             #print ("score", score, "score", score.shape)
             
             #y1_pred = g_model.predict(x_real)
             #y2_pred = g_model2.predict(x_fake)
             score = np.mean(score_each)         
-            g1_loss = g_model.train_on_batch(x_real_n, y_real_n)
-            g2_loss = g_model2.train_on_batch(x_fake_n, y_fake_n)
-            
-            #d_model.train_on_batch(dx,dy)
+            g1_loss = gan_model.train_on_batch(n1, y_real)
+            g2_loss = gan_model.train_on_batch(n2, y_fake)
             dis_loss = d_model.train_on_batch(dx,dy)
-            print ("score", np.mean(score), "g1_loss", g1_loss, "g2_loss", g2_loss)
+            y_real_n.reshape(1,batch_size,1)
+            y_fake_n.reshape(1,batch_size,1)
+            #x_real_n = tf.cast(x_real_n, "float32")
+            #x_fake_n = tf.cast(x_fake_n, "float32")
+            #y_real_n = tf.cast(y_real_n, "float32")
+            #y_fake_n = tf.cast(y_fake_n, "float32")
+            #gan_loss = gan_model.train_on_batch(x_real_n,y_real_n)
+            #gan_loss = gan_model.train_on_batch(x_fake_n,y_fake_n)
+            #gan_model.train_on_batch(x_fake_n, y_fake_n)
+            #dis_loss = gan_model.evaluate(dx,dy)
+            print ("score", np.mean(score), "g1_loss", g1_loss, "g2_loss", g2_loss, "dis_loss", dis_loss)
             #yl.append(score)
             #score = np.mean(yl)
             #d_model.train_on_batch(g1_loss[0], g2_loss[0])
@@ -416,7 +430,7 @@ batch_size = int(size/10)
 dis = 'euclidean'
 g1_loss = 0
 g2_loss = 0
-dis_loss = 0
+dis_loss = 0.1
 score = 0
 yl = []
 c1_hist, g1_hist, g2_hist = [], [], []
