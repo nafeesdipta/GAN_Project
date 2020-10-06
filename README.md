@@ -7,3 +7,5 @@ Discriminator custom loss function.
 
 Update 2:
 gan1.py: This is the script for Analyze Gan's perfomance project. Most ideas has been taken from above mentioned tutorial site but data preprocessing part has been implemented by me.
+
+Update 3: Novel methods for developing GAN with Nearest Neigbour with 1D, 2D and 50D (dimensions) with syntheic data has been successfully proved our algorithm. The script will be uploaded after the publication.
